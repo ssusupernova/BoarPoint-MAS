@@ -57,7 +57,7 @@ export default function NotificationScreen() {
         onPress={async () => {
           if (await permission.request())
             router.replace(
-              (user.role === "renter" ? "/renter" : "/account") as Href,
+              (user.role === "renter" ? "/renter" : "/provider") as Href,
             );
         }}
       />
@@ -65,7 +65,7 @@ export default function NotificationScreen() {
         title="Not now"
         onPress={() =>
           router.replace(
-            (user.role === "renter" ? "/renter" : "/account") as Href,
+            (user.role === "renter" ? "/renter" : "/provider") as Href,
           )
         }
       />

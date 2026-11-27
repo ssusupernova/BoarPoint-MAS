@@ -104,7 +104,7 @@ export function AuthScreen({ mode }: { mode: Mode }) {
         centered={mode === "forgot" || mode === "reset"}
       />
       {mode === "login" && <View style={styles.accent} />}
-      {mode === "signup" && (
+      {(mode === "signup" || mode === "login") && (
         <View style={styles.roles}>
           {(["renter", "provider"] as const).map((option) => (
             <Pressable

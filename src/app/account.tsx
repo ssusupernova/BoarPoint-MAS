@@ -16,16 +16,28 @@ import { colors } from "@/constants/colors";
 import { useRenter } from "@/features/renter/state";
 import { RenterTabs } from "@/features/renter/screens";
 
+import { ProviderTabs } from "@/features/provider/screens";
+import { useProvider } from "@/features/provider/state";
+
 export default function AccountScreen() {
   const session = usePreviewSession();
   const renter = useRenter();
+  const provider = useProvider();
   const permission = useNotificationPermission();
   const [error, setError] = useState("");
   const [confirmLogout, setConfirmLogout] = useState(false);
   if (!session.user) return <Redirect href="/auth/login" />;
   const { email, role } = session.user;
   return (
-    <Screen footer={role === "renter" ? <RenterTabs selected="account" /> : undefined}>
+    <Screen
+      footer={
+        role === "renter" ? (
+          <RenterTabs selected="account" />
+        ) : (
+          <ProviderTabs selected="account" />
+        )
+      }
+    >
       <Brand />
       <Heading title="Account" />
       {role === "renter" && (
@@ -72,6 +84,7 @@ export default function AccountScreen() {
         Frontend preview session. Push delivery and account authentication will
         be connected with the backend.
       </Notice>
+      {role === "provider" && <Button secondary title="View original prototype" onPress={() => router.push("/provider/reference" as Href)} />}
       {confirmLogout ? (
         <View style={s.card}>
           <Text style={s.cardTitle}>Log out of this preview?</Text>
@@ -80,6 +93,7 @@ export default function AccountScreen() {
             onPress={() => {
               session.logout();
               renter.reset();
+              provider.reset();
               router.replace("/auth/login");
             }}
           />

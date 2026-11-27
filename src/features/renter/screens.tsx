@@ -123,10 +123,14 @@ function Preferences() {
   </Page>;
 }
 function Results() {
+  const { exclude } = useLocalSearchParams<{ exclude?: string }>();
   const { requirements: r, select } = useRenter(); const eligible = rooms.filter(room => room.rent >= Number(r.min) && room.rent <= Number(r.max) && room.deposit <= Number(r.depositLimit) && room.type === r.type && room.area.toLowerCase().includes(r.area.trim().toLowerCase()) && r.amenities.every(item => room.amenities.includes(item)));
+  if (!eligible.some(room => room.id !== exclude)) return <AlternateOutcome outcome="no-matches" />;
   return <Page><View style={styles.simpleHeader}><Pressable onPress={() => router.back()}><Feather name="arrow-left" size={25} color={dark}/></Pressable><View><Title subtitle="Sample rooms matching your limits">Your matches</Title></View></View>
     <View style={styles.searchSummary}><HouseMark /><View style={{ flex: 1 }}><Text style={styles.searchMain}>{r.area} · {r.type}</Text><Text style={styles.searchSub}>Up to {peso(Number(r.max))} / month</Text></View><Pressable onPress={() => router.navigate("/renter" as Href)}><Text style={styles.edit}>Edit</Text></Pressable></View>
-    <Text style={styles.resultsCount}>{eligible.length} eligible rooms</Text>{eligible.map((room, i) => <MatchCard key={room.id} room={room} rank={i+1} onPress={() => { select(room); go("room"); }} />)}
+    <Text style={styles.resultsCount}>{eligible.filter(room => room.id !== exclude).length} eligible rooms</Text>{eligible.filter(room => room.id !== exclude).map((room, i) => <MatchCard key={room.id} room={room} rank={i+1} onPress={() => { select(room); go("room"); }} />)}
+    {exclude && <Info>Sample availability refreshed. The conflicting room is excluded from these results.</Info>}
+    <Action title="Preview: No matching rooms" outline onPress={() => preview("no-matches")} />
     {eligible.length === 0 && <><Info>No matching rooms. Edit your search to try again.</Info><Action title="Edit search criteria" onPress={() => router.navigate("/renter" as Href)} /></>}
   </Page>;
 }
@@ -203,6 +207,7 @@ function History() {
   const [filter, setFilter] = useState<"Active" | "Finished">("Active");
   const { selected, booking, negotiation } = useRenter();
   return <Page selected="negotiations"><Header role /><Title subtitle="Follow your agent’s offers and outcomes.">Your negotiations</Title><View style={styles.centerBadge}><MaterialCommunityIcons name="home-switch-outline" size={72} color={rust} /></View>
+    <AlternatePreviews />
     <View style={styles.segment}>{(["Active","Finished"] as const).map(name => <Pressable key={name} onPress={() => setFilter(name)} style={[styles.segmentOption,filter === name && styles.segmentOn]}><Text style={[styles.segmentText,filter === name && { color: "white" }]}>{name}</Text></Pressable>)}</View>
     {filter === "Active" && negotiation !== "idle" && !booking ? <Card><RoomSummary room={selected} /><Pill>Negotiation in progress · preview</Pill><Action title="View negotiation" onPress={() => go(negotiation === "validating" ? "agreement" : "negotiation")} /></Card> : filter === "Finished" && booking ? <Card><RoomSummary room={selected} booking /><Pill greenish>Booking confirmed · preview</Pill><Line icon="database" label="Agreed rent" value="₱3,300 / month" /><Line icon="calendar" label="Lease" value="6 months" /><Action title="View booking" onPress={() => go("booking")} /></Card> : <Card><Text style={styles.sectionTitle}>No {filter.toLowerCase()} negotiations yet</Text><Text style={styles.muted}>Choose a room from search to begin your own preview flow.</Text><Action title="Find a room" onPress={() => router.navigate("/renter" as Href)} /></Card>}
     <Card><Text style={styles.sectionTitle}>Sample {filter.toLowerCase()} flow</Text><RoomSummary room={rooms[0]} /><Pill>{filter === "Active" ? "R6 · Negotiating" : "R7 · Agreement reached"}</Pill><Text style={styles.muted}>Demo data for exploring the Figma success path.</Text><Action title={filter === "Active" ? "View negotiation preview" : "View agreement preview"} onPress={() => preview(filter === "Active" ? "negotiation" : "agreement")} />{filter === "Finished" && <Action title="View booking outcome preview" outline onPress={() => preview("confirmed")} />}</Card>
@@ -210,11 +215,47 @@ function History() {
 }
 const screens: Record<string, () => React.JSX.Element> = { preferences: Preferences, results: Results, room: Details, review: Review, negotiation: Negotiation, agreement: Agreement, confirmed: Confirmed, booking: Booking, history: History };
 export function RenterStage({ stage }: { stage?: string }) {
+  if (stage && stage in alternateOutcomes) return <AlternateOutcome outcome={stage as AlternateOutcomeKey} />;
+  return <StandardRenterStage stage={stage} />;
+}
+function StandardRenterStage({ stage }: { stage?: string }) {
   const Component = stage ? screens[stage] : undefined;
   const { negotiation, booking } = useRenter();
   const demo = useDemoPreview();
   if (!demo && ((stage === "confirmed" && !booking) || ((stage === "agreement" || stage === "negotiation") && negotiation === "idle"))) return <Page><Header /><Title>Nothing to show yet</Title><Info>Start from a room to follow the preview flow.</Info><Action title="Find a room" onPress={() => router.replace("/renter" as Href)} /></Page>;
   return Component ? <Component /> : <Page><Header /><Title>Screen unavailable</Title><Action title="Return to search" onPress={() => router.replace("/renter" as Href)} /></Page>;
+}
+
+const alternateOutcomes = {
+  "no-matches": { code: "O1", title: "No matching rooms", heading: "Search results", icon: "search", reason: "No rooms meet all your required conditions.", action: "Edit search criteria", target: "search" },
+  "no-agreement": { code: "O2", title: "No agreement reached", heading: "Negotiation outcome", icon: "clock", reason: "The negotiation deadline was reached before an offer was accepted.", action: "Choose another room", target: "results" },
+  "validation-failed": { code: "O3", title: "Booking not confirmed", heading: "Booking outcome", icon: "shield", reason: "An agreement was reached, but the terms were not accepted at the final validation check.", action: "Choose another room", target: "results" },
+  "booking-conflict": { code: "O4", title: "Room booked by another request", heading: "Booking outcome", icon: "calendar", reason: "Another booking was saved first for the same room and dates.", action: "Refresh room results", target: "results" },
+} as const;
+type AlternateOutcomeKey = keyof typeof alternateOutcomes;
+function AlternatePreviews() {
+  return <Card><Text style={styles.sectionTitle}>Alternate outcome previews</Text><Text style={styles.muted}>Explore each branch independently. Demo outcomes do not change your booking.</Text>{(Object.keys(alternateOutcomes) as AlternateOutcomeKey[]).map(key => <Action key={key} title={`${alternateOutcomes[key].code} · ${alternateOutcomes[key].title}`} outline onPress={() => preview(key)} />)}</Card>;
+}
+function AlternateOutcome({ outcome }: { outcome: AlternateOutcomeKey }) {
+  const item = alternateOutcomes[outcome];
+  const { requirements: r, selected: current } = useRenter();
+  const demo = useDemoPreview();
+  const room = demo ? rooms[0] : current;
+  const noMatch = outcome === "no-matches";
+  const noAgreement = outcome === "no-agreement";
+  return <Page selected={noMatch ? "home" : noAgreement ? "negotiations" : "bookings"}>
+    <Header /><Title>{item.heading}</Title>
+    <View style={styles.centerBadge}><Feather name={item.icon} size={60} color={rust} /></View>
+    <Text accessibilityRole="header" style={styles.outcomeTitle}>{item.title}</Text>
+    <View style={styles.centerBadge}><Pill>{item.code} · {demo ? "Sample outcome" : "No eligible rooms"}</Pill></View>
+    <Text style={styles.outcomeSub}>{item.reason}</Text>
+    {noMatch ? <Card><Text style={styles.sectionTitle}>Your search</Text><Line label="Area" value={r.area} /><Line label="Room type" value={r.type} /><Line label="Maximum rent" value={`${peso(Number(r.max))} / month`} /><Line label="Move-in" value={r.date} /><Line label="Required inclusions" value={r.amenities.join(" + ") || "None"} /></Card> : <Card><RoomSummary room={room} />{noAgreement ? <><Line label="Final status" value="No agreement" /><Line label="Reason" value="Deadline reached" /><Line label="Booking" value="Not created" /></> : <><Text style={styles.sectionTitle}>Agreed terms · sample</Text><Terms /><Line label="Booking status" value="Not created" /></>}</Card>}
+    <Info>{noMatch ? "Try adjusting your budget, dates, or required inclusions." : noAgreement ? "No booking was created. Choose another room or update your preferences." : outcome === "validation-failed" ? "No booking was created. Review the terms and choose another room." : "The final booking check prevented a duplicate reservation. Refresh the results to check current availability."}</Info>
+    <Action title={item.action} onPress={() => item.target === "search" ? router.navigate("/renter" as Href) : router.replace(`/renter/results${outcome === "booking-conflict" && demo ? "?exclude=sunny" : ""}` as Href)} />
+    {!noMatch && <Action title="View offer history" outline onPress={() => preview("negotiation")} />}
+    <Action title={noMatch ? "Back to search" : "View negotiation history"} outline onPress={() => noMatch ? router.navigate("/renter" as Href) : router.navigate("/renter/history" as Href)} />
+    {demo && <Text style={styles.centerNote}>Frontend preview · No real request was submitted.</Text>}
+  </Page>;
 }
 
 const styles = StyleSheet.create({
